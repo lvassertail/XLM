@@ -84,6 +84,15 @@ def get_parser():
         parser.add_argument("--asm_div_value", type=float, default=4,
                             help="Adaptive softmax cluster sizes ratio")
 
+    # weighted loss
+    parser.add_argument("--weighted_loss", type=bool_flag, default=False,
+                        help="Calculate a weighted loss by embeddings similarity")
+    parser.add_argument("--weighted_loss_k", type=int, default=5,
+                        help="The number of embeddings with the highest prediction score "
+                             "to calculate the weighted loss")
+    parser.add_argument("--weighted_loss_similarity", type=str, default="cosine",
+                        help="Calculate a weighted loss by embeddings similarity")
+
     # causal language modeling task parameters
     parser.add_argument("--context_size", type=int, default=0,
                         help="Context size (0 means that the first elements in sequences won't have any context)")

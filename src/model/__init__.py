@@ -49,6 +49,8 @@ def check_model_params(params):
     # share input and output embeddings
     assert params.share_inout_emb is False or params.asm is False
 
+    assert params.weighted_loss is False or params.asm is False
+
     # adaptive softmax
     if params.asm:
         assert params.asm_div_value > 1
@@ -56,6 +58,10 @@ def check_model_params(params):
         assert all([x.isdigit() for x in s])
         params.asm_cutoffs = [int(x) for x in s]
         assert params.max_vocab == -1 or params.asm_cutoffs[-1] < params.max_vocab
+
+    if params.weighted_loss:
+        assert params.weighted_loss_similarity == 'cosine' or params.weighted_loss_similarity == 'l2' # when adding another similarity function -
+        # add the option here
 
     # memory
     if params.use_memory:

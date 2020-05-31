@@ -108,6 +108,9 @@ class PredLayer(nn.Module):
     def __init__(self, params):
         super().__init__()
         self.asm = params.asm
+        self.weighted_loss = params.weighted_loss
+        self.weighted_loss_k = params.weighted_loss_k
+        self.weighted_loss_similarity = params.weighted_loss_similarity
         self.n_words = params.n_words
         self.pad_index = params.pad_index
         dim = params.emb_dim
@@ -123,18 +126,37 @@ class PredLayer(nn.Module):
                 head_bias=True,  # default is False
             )
 
-    def forward(self, x, y, get_scores=False):
+    def forward(self, x, y, get_scores=False, embeddings=None):
         """
         Compute the loss, and optionally the scores.
         """
         assert (y == self.pad_index).sum().item() == 0
 
-        if self.asm is False:
+        if self.weighted_loss and embeddings is not None:
+            n,d = x.shape
+
             scores = self.proj(x).view(-1, self.n_words)
-            loss = F.cross_entropy(scores, y, reduction='mean')
-        else:
+            pre_weighted_loss = F.cross_entropy(scores, y, reduction='none')
+            y_embeddings = embeddings(y)
+            y_embeddings = torch.unsqueeze(y_embeddings, 1)
+            topk_scores, topk_indices = torch.topk(scores, dim=1, k=self.weighted_loss_k)
+            topk_probs = F.softmax(topk_scores, dim=1)
+
+            topk_embeddings = embeddings(topk_indices)
+
+            if self.weighted_loss_similarity == "cosine":
+                topk_similarity = 1 - F.cosine_similarity(topk_embeddings, y_embeddings, dim=2).detach()
+            elif self.weighted_loss_similarity == "l2":
+                topk_similarity = (10 / math.sqrt(d)) * (torch.sqrt(torch.sum(torch.square(topk_embeddings - y_embeddings), dim=2)).detach())
+
+            weight_factor = torch.sum(topk_probs * topk_similarity, dim=1)
+            loss = torch.mean(pre_weighted_loss * weight_factor)
+        elif self.asm:
             _, loss = self.proj(x, y)
             scores = self.proj.log_prob(x) if get_scores else None
+        else:
+            scores = self.proj(x).view(-1, self.n_words)
+            loss = F.cross_entropy(scores, y, reduction='mean')
 
         return scores, loss
 
@@ -436,7 +458,7 @@ class TransformerModel(nn.Module):
             `get_scores` is a boolean specifying whether we need to return scores
         """
         masked_tensor = tensor[pred_mask.unsqueeze(-1).expand_as(tensor)].view(-1, self.dim)
-        scores, loss = self.pred_layer(masked_tensor, y, get_scores)
+        scores, loss = self.pred_layer(masked_tensor, y, get_scores, self.embeddings)
         return scores, loss
 
     def generate(self, src_enc, src_len, tgt_lang_id, max_len=200, sample_temperature=None):
